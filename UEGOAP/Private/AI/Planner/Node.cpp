@@ -1,4 +1,5 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "AI/Goals/GoalBase.h"
+#include "AI/Planner/Node.h"
+

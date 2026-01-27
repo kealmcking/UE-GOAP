@@ -4,17 +4,19 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "AI/Actions/ActionBase.h"
-#include "BaseAgent.generated.h"
+#include "AI/Agent/WorldState.h"
+#include "AI/Actions/Action.h"
+#include "AI/Goals/Goal.h"
+#include "Agent.generated.h"
 
 UCLASS()
-class UEGOAP_API AAgentBase : public ACharacter
+class UEGOAP_API AAgent : public ACharacter
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this character's properties
-	AAgentBase();
+	AAgent();
 
 protected:
 	// Called when the game starts or when spawned
@@ -27,7 +29,14 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	UPROPERTY(BlueprintReadWrite, EditDefaultsOnly, Category = "Actions")
-	TArray<UActionBase*> Actions;
+public:
+	FWorldState WorldState;
 
+	UPROPERTY()
+	TArray<UAction*> AvailableActions;
+
+	UPROPERTY()
+	TArray<UGoal*> Goals;
+
+	void RequestPlan();
 };
