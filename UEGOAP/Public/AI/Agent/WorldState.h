@@ -19,4 +19,11 @@ public:
 	int32 GetValue(FName Key) const;
 	void SetValue(FName Key, int32 Value);
 	bool Meets(const TMap<FName, int32>& Conditions) const;
+
+
+	bool operator==(const FWorldState& Other) const
+	{
+		return Values.OrderIndependentCompareEqual(Other.Values);
+	}
+
 };

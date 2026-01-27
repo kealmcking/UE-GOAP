@@ -7,51 +7,55 @@
 
 bool UPlanner::BuildPlan(const FWorldState& StartState, const UGoal* Goal, const TArray<UAction*>& Actions, TArray<UAction*>& OutPlan)
 {
-	// Empty List of Nodes
-	std::vector<FNode> OpenSet;
-	
-	// Empty List of World States
-	std::vector<FWorldState> ClosedSet;
+	OutPlan.Reset();
+
+	TArray<FNode> OpenSet;
+	TArray<FWorldState> ClosedSet;
 
 	FNode StartNode;
 	StartNode.WorldState = StartState;
-	StartNode.Cost = 0;
+	StartNode.Cost = 0.f;
 
-	OpenSet.push_back(StartNode);
+	OpenSet.Add(StartNode);
 
+	while (OpenSet.Num() > 0) {
+		OpenSet.Sort([](const FNode& A, const FNode& B) {
+			return A.Cost < B.Cost;
+			});
 
-
-	while (!OpenSet.empty()) {
-		auto BestIt = OpenSet.begin();
-		float MinCost = FLT_MAX;
-		
-		for (auto It = OpenSet.begin(); It != OpenSet.end(); ++It) {
-			if (It->Cost < MinCost) {
-				MinCost = It->Cost;
-				BestIt = It;
-			}
-		}
-
-		FNode Current = *BestIt;
-		OpenSet.erase(BestIt);
+		FNode Current = OpenSet[0];
+		OpenSet.RemoveAt(0);
 
 		if (Goal->IsSatisfied(Current.WorldState)) {
 			OutPlan = Current.ActionPath;
 			return true;
 		}
 
-		ClosedSet.push_back(Current.WorldState);
+		ClosedSet.Add(Current.WorldState);
 
 		for (UAction* Action : Actions) {
-			if (Action->CanExecute(Current.WorldState)) {
-				FWorldState NewState = Current.WorldState;
-
-				for (auto Effect : Action->Effects) {
-					NewState.Values.Add(Effect);
-				}
+			if (!Action || !Action->CanExecute(Current.WorldState)) {
+				continue;
 			}
+
+			FWorldState NewState = Current.WorldState;
+
+			for (const auto& Effect : Action->Effects) {
+				NewState.SetValue(Effect.Key, Effect.Value);
+			}
+
+			if (ClosedSet.Contains(NewState)) {
+				continue;
+			}
+
+			FNode NewNode;
+			NewNode.WorldState = NewState;
+			NewNode.Cost = Current.Cost + Action->Cost;
+			NewNode.ActionPath = Current.ActionPath;
+			NewNode.ActionPath.Add(Action);
+
+			OpenSet.Add(NewNode);
 		}
 	}
-
 	return false;
 }
