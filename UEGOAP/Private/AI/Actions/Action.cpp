@@ -2,13 +2,28 @@
 
 
 #include "AI/Actions/Action.h"
+#include "AI/Agent/Agent.h"
+
 
 bool UAction::CanExecute(const FWorldState& WorldState) const
 {
-	return false;
+	for (const TPair<FName, int32>& Condition : Preconditions) {
+		if (!WorldState.Meets(Condition.Key, Condition.Value)) {
+			return false;
+		}
+	}
+	return true;
 }
 
-bool UAction::Execute(AGOAPAgent* Agent)
+bool UAction::Execute(AAgent* Agent)
 {
-	return false;
+	for (auto& Effect : Effects) {
+		Agent->WorldState.SetValue(Effect.Key, Effect.Value);
+	}
+
+	return true;
+}
+
+bool UAction::IsComplete() const {
+	return true;
 }

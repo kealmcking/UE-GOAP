@@ -18,6 +18,7 @@ public:
 
 	int32 GetValue(FName Key) const;
 	void SetValue(FName Key, int32 Value);
+	bool Meets(FName Key, int32 Value) const;
 	bool Meets(const TMap<FName, int32>& Conditions) const;
 
 

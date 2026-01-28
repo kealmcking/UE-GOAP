@@ -15,8 +15,20 @@ class UEGOAP_API UExecutor : public UObject
 {
 	GENERATED_BODY()
 
+	UExecutor();
+
 public:
-	void TickExecution(float DeltaTime);
+	void TickExecution(AAgent* Agent, float DeltaTime);
 	void SetPlan(const TArray<UAction*>& NewPlan);
+
+	bool HasActivePlan() const { return CurrentPlan.Num() > 0; }
+
+private:
+
+	UPROPERTY()
+	TArray<UAction*> CurrentPlan;
+
+	int32 CurrentActionIndex;
+
 	
 };

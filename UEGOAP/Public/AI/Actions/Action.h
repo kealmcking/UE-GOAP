@@ -7,6 +7,8 @@
 #include "UObject/Object.h"
 #include "Action.generated.h"
 
+class AAgent;
+
 /**
  * 
  */
@@ -23,6 +25,8 @@ public:
 	TMap<FName, int32> Effects;
 
 	virtual bool CanExecute(const FWorldState& WorldState) const;
-	virtual bool Execute(class AGOAPAgent* Agent);
+	virtual bool Execute(class AAgent* Agent);
+
+	virtual bool IsComplete() const;
 	
 };

@@ -19,5 +19,5 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	int32 Priority;
 
-	virtual bool IsSatisfied(const FWorldState& WorldState) const;
+	virtual bool IsSatisfied(const FWorldState& WorldState) const PURE_VIRTUAL(UGoal::IsSatisfied, return false;);
 };
