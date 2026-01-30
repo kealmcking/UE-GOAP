@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Interfaces and actors**
   - `IEdible`: `Consume(Amount)` returns amount taken, `GetAvailableAmount`.
   - `IRestable`: `Rest`, `TryReserve`, `Release`, `IsAvailable`.
-  - `IChoppable` (stub).
+  - `IChoppable` (No behaviour implemented yet).
   - `AAppleTreeActor`: `FruitAmount`, `Consume`, `GetAvailableAmount`.
   - `ABedActor`: `Rest`, `TryReserve`, `Release`, `IsAvailable`, `OccupyingAgent`.
   - `APineTreeActor`, `ACampfireActor` (base actors).
