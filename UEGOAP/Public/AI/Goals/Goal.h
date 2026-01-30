@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,9 +5,6 @@
 #include "UObject/Object.h"
 #include "Goal.generated.h"
 
-/**
- * 
- */
 UCLASS(Abstract)
 class UEGOAP_API UGoal : public UObject
 {
@@ -19,5 +14,6 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	int32 Priority;
 
+	/** True when the world state meets this goal. */
 	virtual bool IsSatisfied(const FWorldState& WorldState) const PURE_VIRTUAL(UGoal::IsSatisfied, return false;);
 };

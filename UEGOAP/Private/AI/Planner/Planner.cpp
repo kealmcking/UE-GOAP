@@ -1,61 +1,82 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "AI/Planner/Planner.h"
 #include "AI/Planner/Node.h"
-#include <vector>
 
+/**
+ * Finds a lowest-cost sequence of actions that takes StartState to a state satisfying Goal; writes it to OutPlan.
+ */
 bool UPlanner::BuildPlan(const FWorldState& StartState, const UGoal* Goal, const TArray<UAction*>& Actions, TArray<UAction*>& OutPlan)
 {
-	OutPlan.Reset();
+    OutPlan.Reset();
+    TArray<FNode> OpenSet;
+    TSet<FWorldState> ClosedSet;
 
-	TArray<FNode> OpenSet;
-	TArray<FWorldState> ClosedSet;
+    FNode StartNode;
+    StartNode.WorldState = StartState;
+    StartNode.Cost = 0.f;
+    OpenSet.HeapPush(StartNode);
 
-	FNode StartNode;
-	StartNode.WorldState = StartState;
-	StartNode.Cost = 0.f;
+    static const int32 MaxIterations = 10000;
+    int32 Iterations = 0;
 
-	OpenSet.Add(StartNode);
+    while (OpenSet.Num() > 0 && Iterations++ < MaxIterations)
+    {
+        FNode Current;
+        OpenSet.HeapPop(Current);
 
-	while (OpenSet.Num() > 0) {
-		OpenSet.Sort([](const FNode& A, const FNode& B) {
-			return A.Cost < B.Cost;
-			});
+        if (Goal->IsSatisfied(Current.WorldState))
+        {
+            OutPlan = Current.ActionPath;
+            return true;
+        }
 
-		FNode Current = OpenSet[0];
-		OpenSet.RemoveAt(0);
+        if (ClosedSet.Contains(Current.WorldState))
+            continue;
 
-		if (Goal->IsSatisfied(Current.WorldState)) {
-			OutPlan = Current.ActionPath;
-			return true;
-		}
+        ClosedSet.Add(Current.WorldState);
 
-		ClosedSet.Add(Current.WorldState);
+        for (UAction* Action : Actions)
+        {
+            if (!Action)
+                continue;
 
-		for (UAction* Action : Actions) {
-			if (!Action || !Action->CanExecute(Current.WorldState)) {
-				continue;
-			}
+            if (!Action->CanExecute(Current.WorldState))
+                continue;
 
-			FWorldState NewState = Current.WorldState;
+            FWorldState NewState = Current.WorldState;
+            for (const auto& Effect : Action->Effects)
+            {
+                int32 NewValue;
+                if (Effect.Key == "HasFood")
+                {
+                    NewValue = FMath::Clamp(Effect.Value, 0, 1);
+                }
+                else
+                {
+                    int32 OldValue = NewState.GetValue(Effect.Key);
+                    NewValue = OldValue + Effect.Value;
+                    if (Effect.Key == "Hunger" || Effect.Key == "Energy")
+                        NewValue = FMath::Clamp(NewValue, 0, 100);
+                    else if (Effect.Key == "ThreatNearby")
+                        NewValue = FMath::Clamp(NewValue, 0, 100);
+                }
+                NewState.SetValue(Effect.Key, NewValue);
+            }
 
-			for (const auto& Effect : Action->Effects) {
-				NewState.SetValue(Effect.Key, Effect.Value);
-			}
+            if (Current.ActionPath.Num() > 0 && Current.ActionPath.Last() == Action && !Action->CanExecute(NewState))
+                continue;
 
-			if (ClosedSet.Contains(NewState)) {
-				continue;
-			}
+            if (ClosedSet.Contains(NewState))
+                continue;
 
-			FNode NewNode;
-			NewNode.WorldState = NewState;
-			NewNode.Cost = Current.Cost + Action->Cost;
-			NewNode.ActionPath = Current.ActionPath;
-			NewNode.ActionPath.Add(Action);
+            FNode NewNode;
+            NewNode.WorldState = NewState;
+            NewNode.Cost = Current.Cost + Action->Cost;
+            NewNode.ActionPath = Current.ActionPath;
+            NewNode.ActionPath.Add(Action);
 
-			OpenSet.Add(NewNode);
-		}
-	}
-	return false;
+            OpenSet.HeapPush(NewNode);
+        }
+    }
+
+    return false;
 }

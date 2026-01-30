@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -11,4 +9,6 @@ struct FNode
 	FWorldState WorldState;
 	TArray<UAction*> ActionPath;
 	float Cost;
+
+	bool operator<(const FNode& Other) const { return Cost > Other.Cost; }
 };

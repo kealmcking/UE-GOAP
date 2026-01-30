@@ -1,14 +1,9 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "AI/Goals/Goal.h"
 #include "Goal_StaySafe.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class UEGOAP_API UGoal_StaySafe : public UGoal
 {
@@ -20,7 +15,7 @@ public:
 	}
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Goal")
-	int32 ThreatThreshold = 40;
+	int32 ThreatThreshold = 0;
 
 	virtual bool IsSatisfied(const FWorldState& WorldState) const override;
 	
