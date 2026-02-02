@@ -83,4 +83,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `UGOAPDebugWidget`: optional `ConsolidatedDebugText` (single block) or separate WorldState/Goal/Plan/Action text; one widget per session; `InitializeWidget(AAgent*)`.
 
 [0.1.5]: https://github.com/kealmcking/UE-GOAP
-[0.1.0]: https://github.com/kealmcking/UE-GOAP
