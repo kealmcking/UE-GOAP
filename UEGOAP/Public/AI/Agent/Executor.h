@@ -23,6 +23,9 @@ public:
 	/** Returns the action currently being executed, or nullptr. */
 	UAction* GetCurrentAction() const;
 
+	/** Clears the plan and stops agent movement. */
+	void AbortPlan(AAgent* Agent);
+
 private:
 
 	UPROPERTY()

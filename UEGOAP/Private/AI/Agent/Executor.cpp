@@ -1,7 +1,42 @@
 #include "AI/Agent/Executor.h"
 #include "AI/Agent/Agent.h"
+#include "AIController.h"
 
 const float UExecutor::StuckTimeoutSeconds = 15.f;
+
+void UExecutor::AbortPlan(AAgent* Agent)
+{
+    if (CurrentPlan.IsValidIndex(CurrentActionIndex))
+    {
+        UAction* CurrentAction = CurrentPlan[CurrentActionIndex];
+        if (CurrentAction)
+        {
+            CurrentAction->Cleanup(Agent);
+        }
+    }
+    
+    for (UAction* Action : CurrentPlan)
+    {
+        if (Action && Action->GetOuter() == this)
+        {
+            Action->MarkAsGarbage();
+        }
+    }
+    
+    CurrentPlan.Empty();
+    CurrentActionIndex = 0;
+    LastLoggedActionIndex = -1;
+    TimeOnCurrentAction = 0.f;
+    ConsecutiveExecuteFalse = 0;
+
+    if (Agent)
+    {
+        if (AAIController* AIC = Cast<AAIController>(Agent->GetController()))
+        {
+            AIC->StopMovement();
+        }
+    }
+}
 
 UExecutor::UExecutor() : CurrentActionIndex(0)
 {
@@ -14,7 +49,7 @@ void UExecutor::SetPlan(const TArray<UAction*>& NewPlan)
 {
 	CurrentPlan = NewPlan;
 	CurrentActionIndex = 0;
-	LastLoggedActionIndex = -1;
+	LastLoggedActionIndex = 0;
 	TimeOnCurrentAction = 0.f;
 	ConsecutiveExecuteFalse = 0;
 }
@@ -46,26 +81,24 @@ void UExecutor::TickExecution(AAgent* Agent, float DeltaTime)
         LastLoggedActionIndex = CurrentActionIndex;
         TimeOnCurrentAction = 0.f;
         ConsecutiveExecuteFalse = 0;
+
+        CurrentAction->ResetForPlan();
+        if (!CurrentAction->Setup(Agent)) {
+            AbortPlan(Agent);
+            return;
+        }
     }
 
     TimeOnCurrentAction += DeltaTime;
     if (TimeOnCurrentAction >= StuckTimeoutSeconds)
     {
-        CurrentPlan.Empty();
-        CurrentActionIndex = 0;
-        LastLoggedActionIndex = -1;
-        TimeOnCurrentAction = 0.f;
-        ConsecutiveExecuteFalse = 0;
+        AbortPlan(Agent);
         return;
     }
 
     if (!CurrentAction->CanExecute(Agent->WorldState))
     {
-        CurrentPlan.Empty();
-        CurrentActionIndex = 0;
-        LastLoggedActionIndex = -1;
-        TimeOnCurrentAction = 0.f;
-        ConsecutiveExecuteFalse = 0;
+        AbortPlan(Agent);
         return;
     }
 
@@ -75,11 +108,7 @@ void UExecutor::TickExecution(AAgent* Agent, float DeltaTime)
         ConsecutiveExecuteFalse++;
         if (ConsecutiveExecuteFalse >= 120)
         {
-            CurrentPlan.Empty();
-            CurrentActionIndex = 0;
-            LastLoggedActionIndex = -1;
-            TimeOnCurrentAction = 0.f;
-            ConsecutiveExecuteFalse = 0;
+            AbortPlan(Agent);
         }
         return;
     }
@@ -90,10 +119,30 @@ void UExecutor::TickExecution(AAgent* Agent, float DeltaTime)
         CurrentActionIndex++;
         if (CurrentActionIndex >= CurrentPlan.Num())
         {
+            for (UAction* Action : CurrentPlan)
+            {
+                if (Action && Action->GetOuter() == this)
+                {
+                    Action->MarkAsGarbage();
+                }
+            }
             CurrentPlan.Empty();
             CurrentActionIndex = 0;
             LastLoggedActionIndex = -1;
             TimeOnCurrentAction = 0.f;
+            return;
+        }
+        
+        LastLoggedActionIndex = CurrentActionIndex;
+        TimeOnCurrentAction = 0.f;
+        ConsecutiveExecuteFalse = 0;
+        
+        UAction* NextAction = CurrentPlan[CurrentActionIndex];
+        NextAction->ResetForPlan();
+        if (!NextAction->Setup(Agent))
+        {
+            AbortPlan(Agent);
+            return;
         }
     }
 }

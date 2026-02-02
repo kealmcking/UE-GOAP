@@ -11,7 +11,7 @@ class UEGOAP_API UGoal_StayFed : public UGoal
 
 public:
 	UGoal_StayFed() {
-		Priority = 10;
+		Priority = 15;
 	}
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Goal")

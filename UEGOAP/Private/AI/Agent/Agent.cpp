@@ -1,11 +1,24 @@
 #include "AI/Agent/Agent.h"
 
+#include "AI/Actor/Interfaces/Edible.h"
+#include "AI/Actor/Interfaces/Choppable.h"
+
 #include "AI/Actions/Action_Eat.h"
 #include "AI/Actions/Action_Sleep.h"
 #include "AI/Actions/Action_FindFood.h"
+#include "AI/Actions/Action_Wander.h"
+#include "AI/Actions/Action_GatherWood.h"
+#include "AI/Actions/Action_StockWood.h"
+
 #include "AI/Goals/Goal_StayFed.h"
+#include "AI/Goals/Goal_StockpileWood.h"
+#include "AI/Goals/Goal_GatherWood.h"
 #include "AI/Goals/Goal_StayRested.h"
 #include "AI/Goals/Goal_StaySafe.h"
+#include "AI/Goals/Goal_Idle.h"
+
+#include "AIController.h"
+#include "Navigation/PathFollowingComponent.h"
 
 namespace
 {
@@ -34,18 +47,31 @@ void AAgent::BeginPlay()
     if (!GetWorld())
         return;
 
+    if (!Planner)
+        Planner = NewObject<UPlanner>(this);
+    if (!Executor)
+        Executor = NewObject<UExecutor>(this);
+
     WorldState.SetValue("Hunger", 50);
     WorldState.SetValue("Energy", 50);
-    WorldState.SetValue("ThreatNearby", 0);
     WorldState.SetValue("HasFood", 0);
+    WorldState.SetValue("Wandered", 0);
+    WorldState.SetValue("CarriedWood", 0);
+    WorldState.SetValue("WoodStock", 0);
+    WorldState.SetValue("IsResting", 0);
 
     AvailableActions.Add(NewObject<UAction_Eat>(this));
     AvailableActions.Add(NewObject<UAction_Sleep>(this));
     AvailableActions.Add(NewObject<UAction_FindFood>(this));
+    AvailableActions.Add(NewObject<UAction_Wander>(this));
+    AvailableActions.Add(NewObject<UAction_GatherWood>(this));
+    AvailableActions.Add(NewObject<UAction_StockWood>(this));
 
     Goals.Add(NewObject<UGoal_StayFed>(this));
     Goals.Add(NewObject<UGoal_StayRested>(this));
-    Goals.Add(NewObject<UGoal_StaySafe>(this));
+    Goals.Add(NewObject<UGoal_Idle>(this));
+    Goals.Add(NewObject<UGoal_GatherWood>(this));
+    Goals.Add(NewObject<UGoal_StockpileWood>(this));
 
     if (IsLocallyControlled() && DebugWidgetClass && !bGOAPDebugWidgetCreated)
     {
@@ -58,18 +84,14 @@ void AAgent::BeginPlay()
         }
     }
 
-    GetWorldTimerManager().SetTimer(PlanTimerHandle, this, &AAgent::RequestPlan, 0.5f, true);
+    RequestPlan();
 }
 
 /**
- * Clears the plan timer and resets debug widget state so the next session can create a new widget.
+ * Resets debug widget state so the next session can create a new widget.
  */
 void AAgent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    if (GetWorld())
-    {
-        GetWorldTimerManager().ClearTimer(PlanTimerHandle);
-    }
     bGOAPDebugWidgetCreated = false;
     Super::EndPlay(EndPlayReason);
 }
@@ -81,31 +103,56 @@ void AAgent::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    DegradationAccumulator += DeltaTime;
-    if (DegradationAccumulator >= 0.5f)
+    AAIController* AIC = Cast<AAIController>(GetController());
+    if (AIC && AIC->GetPathFollowingComponent() && AIC->GetPathFollowingComponent()->HasValidPath())
     {
-        UAction* CurrentAction = Executor && Executor->HasActivePlan() ? Executor->GetCurrentAction() : nullptr;
+        FVector Dir = AIC->GetPathFollowingComponent()->GetCurrentDirection();
+        Dir.Z = 0.f;
+        if (Dir.SizeSquared() > 0.01f)
+        {
+            Dir.Normalize();
+            AddMovementInput(Dir, 1.f);
+        }
+    }
 
-        const bool bSuppressHungerDecay = CurrentAction && CurrentAction->SuppressesHungerDegradation();
+    UAction* CurrentActionBeforeTick = Executor && Executor->HasActivePlan() ? Executor->GetCurrentAction() : nullptr;
+
+    if (Executor)
+    {
+        Executor->TickExecution(this, DeltaTime);
+        if (!Executor->HasActivePlan())
+            RequestPlan();
+    }
+
+    HungerAcummulationAccumulator += DeltaTime;
+    if (HungerAcummulationAccumulator >= HungerAccumulationIntervalSeconds)
+    {
+        const bool bSuppressHungerDecay = CurrentActionBeforeTick && CurrentActionBeforeTick->SuppressesHungerDegradation();
         if (!bSuppressHungerDecay)
         {
             int32 CurrentHunger = WorldState.GetValue("Hunger");
             WorldState.SetValue("Hunger", FMath::Clamp(CurrentHunger + 1, 0, 100));
         }
+        HungerAcummulationAccumulator = 0.f;
+    }
 
-        const bool bSuppressEnergyDecay = CurrentAction && CurrentAction->SuppressesEnergyDegradation();
+    EnergyDegradationAccumulator += DeltaTime;
+    if (EnergyDegradationAccumulator >= EnergyDegradationIntervalSeconds)
+    {
+        const bool bSuppressEnergyDecay = CurrentActionBeforeTick && CurrentActionBeforeTick->SuppressesEnergyDegradation();
         if (!bSuppressEnergyDecay)
         {
             int32 CurrentEnergy = WorldState.GetValue("Energy");
             WorldState.SetValue("Energy", FMath::Clamp(CurrentEnergy - 1, 0, 100));
         }
-
-        DegradationAccumulator = 0.f;
+        EnergyDegradationAccumulator = 0.f;
     }
-
-    if (Executor)
+    
+    SourceCleanupAccumulator += DeltaTime;
+    if (SourceCleanupAccumulator >= 5.f)
     {
-        Executor->TickExecution(this, DeltaTime);
+        ClearRegeneratedSources();
+        SourceCleanupAccumulator = 0.f;
     }
 }
 
@@ -117,31 +164,62 @@ void AAgent::RequestPlan()
     if (!Planner || !Executor || AvailableActions.Num() == 0 || Goals.Num() == 0)
         return;
 
-    UGoal* Goal = SelectTopGoal();
-    if (!Goal)
-        return;
-
     if (Executor->HasActivePlan())
         return;
 
-    TArray<UAction*> Plan;
-    bool bSuccess = Planner->BuildPlan(WorldState, Goal, AvailableActions, Plan);
-
-    if (bSuccess && Plan.Num() > 0)
+    TArray<UGoal*> UnsatisfiedGoals;
+    for (UGoal* Goal : Goals)
     {
-        CurrentFoodSource = nullptr;
-        for (UAction* Action : Plan)
-        {
-            if (Action)
-                Action->ResetForPlan();
-        }
-        for (UAction* Action : Plan)
-        {
-            if (!Action->Setup(this))
-                return;
-        }
-        Executor->SetPlan(Plan);
+        if (!Goal)
+            continue;
+        if (!Goal->IsSatisfied(WorldState))
+            UnsatisfiedGoals.Add(Goal);
     }
+
+    if (UnsatisfiedGoals.Num() == 0)
+    {
+        WorldState.SetValue("Wandered", 0);
+        for (UGoal* Goal : Goals)
+        {
+            if (!Goal)
+                continue;
+            if (!Goal->IsSatisfied(WorldState))
+                UnsatisfiedGoals.Add(Goal);
+        }
+    }
+
+    if (UnsatisfiedGoals.Num() == 0)
+        return;
+
+    UnsatisfiedGoals.Sort([](const UGoal& A, const UGoal& B) { return A.Priority > B.Priority; });
+
+    for (UGoal* Goal : UnsatisfiedGoals)
+    {
+        TArray<UAction*> Plan;
+        bool bSuccess = Planner->BuildPlan(WorldState, Goal, AvailableActions, Plan, Executor);
+
+        if (!bSuccess || Plan.Num() == 0)
+            continue;
+
+        CurrentFoodSource = nullptr;
+        
+        if (!Plan.IsValidIndex(0) || !Plan[0] || !Plan[0]->Setup(this))
+        {
+            for (UAction* Action : Plan)
+            {
+                if (Action)
+                    Action->MarkAsGarbage();
+            }
+            continue;
+        }
+
+        CurrentGoal = Goal;
+        Executor->SetPlan(Plan);
+        return;
+    }
+
+    CurrentGoal = nullptr;
+    WorldState.SetValue("Wandered", 0);
 }
 
 /**
@@ -161,5 +239,41 @@ UGoal* AAgent::SelectTopGoal() const
 			BestGoal = Goal;
 	}
 	return BestGoal;
+}
+
+/**
+ * Clears depleted source tracking for sources that have regenerated or been destroyed.
+ */
+void AAgent::ClearRegeneratedSources()
+{
+	if (LastDepletedFoodSource)
+	{
+		if (!IsValid(LastDepletedFoodSource))
+		{
+			LastDepletedFoodSource = nullptr;
+		}
+		else if (IEdible* Edible = Cast<IEdible>(LastDepletedFoodSource))
+		{
+			if (Edible->GetAvailableAmount() > 0)
+			{
+				LastDepletedFoodSource = nullptr;
+			}
+		}
+	}
+	
+	if (LastDepletedWoodSource)
+	{
+		if (!IsValid(LastDepletedWoodSource))
+		{
+			LastDepletedWoodSource = nullptr;
+		}
+		else if (IChoppable* Choppable = Cast<IChoppable>(LastDepletedWoodSource))
+		{
+			if (Choppable->GetAvailableAmount() > 0)
+			{
+				LastDepletedWoodSource = nullptr;
+			}
+		}
+	}
 }
 

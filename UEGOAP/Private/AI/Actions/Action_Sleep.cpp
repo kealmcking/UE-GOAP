@@ -2,28 +2,38 @@
 #include "AI/Actor/Interfaces/Restable.h"
 #include "AI/Agent/Agent.h"
 #include "EngineUtils.h"
+#include "Navigation/PathFollowingComponent.h"
 
 /**
  * Effect adds Energy; no preconditions (CanExecute gates on low energy).
  */
-UAction_Sleep::UAction_Sleep() : bHasSlept(false), RestoredSoFar(0), TimeUntilNextRest(0.f)
+UAction_Sleep::UAction_Sleep() : bHasSlept(false), TimeUntilNextRest(0.f)
 {
 	Cost = 1.0f;
+	AcceptanceRadius = 10.f;
+	SleepWhenUnder = 40;
+	RestUntilEnergy = 70;
 
 	Effects.Add("Energy", 40);
 }
 
 /**
- * True when energy is below threshold so the planner only considers Sleep when tired.
+ * True when we may start sleep (energy < 40) or when we are resting and may continue (energy < 70).
+ * Uses "IsResting" world state instead of instance state to ensure deterministic planning.
  */
 bool UAction_Sleep::CanExecute(const FWorldState& WorldState) const
 {
-	const int32 EnergyThreshold = 70;
-	return WorldState.GetValue("Energy") < EnergyThreshold;
+	const int32 Energy = WorldState.GetValue("Energy");
+	if (Energy < SleepWhenUnder)
+		return true;
+	const int32 IsResting = WorldState.GetValue("IsResting");
+	if (IsResting > 0 && Energy < RestUntilEnergy)
+		return true;
+	return false;
 }
 
 /**
- * Moves to a bed if one was reserved; restores energy over time (at bed or in place if movement gave up).
+ * Moves to a bed if one was reserved; restores energy over time.
  */
 bool UAction_Sleep::Execute(AAgent* Agent)
 {
@@ -32,10 +42,27 @@ bool UAction_Sleep::Execute(AAgent* Agent)
 
 	const float DeltaTime = Agent->GetWorld() ? Agent->GetWorld()->GetDeltaSeconds() : 0.016f;
 
+	AAIController* AIC = Agent ? Cast<AAIController>(Agent->GetController()) : nullptr;
+	UPathFollowingComponent* PFC = AIC ? AIC->GetPathFollowingComponent() : nullptr;
+	const bool bPathReachedGoal = (PFC && PFC->GetStatus() == EPathFollowingStatus::Idle);
+
 	if (TargetActor && !bGiveUpOnBed)
 	{
-		if (CheckArrival(Agent))
+		const bool bAtBedByDistance = CheckArrival(Agent);
+		const bool bAtBedByPath = bPathReachedGoal && (TimeTryingToReachBed >= 0.25f || bIsMoving || bIsAtBed);
+		if (bAtBedByDistance || bAtBedByPath)
 		{
+			const bool bJustArrived = !bIsAtBed;
+			bIsAtBed = true;
+			if (bJustArrived)
+			{
+				Agent->WorldState.SetValue("IsResting", 1);
+				TimeUntilNextRest = 0.f;
+			}
+			if (AgentController)
+				AgentController->StopMovement();
+			bIsMoving = false;
+			bUseManualMovement = false;
 		}
 		else
 		{
@@ -52,44 +79,40 @@ bool UAction_Sleep::Execute(AAgent* Agent)
 				{
 					if (!AgentController)
 						AgentController = Cast<AAIController>(Agent->GetController());
-					if (!AgentController)
-						return false;
 					if (!StartMoveTo(Agent, TargetActor))
 						return false;
 					return true;
 				}
-				if (bUseManualMovement)
-					TickManualMovement(Agent, DeltaTime);
 				return true;
 			}
 		}
 	}
 
-	TimeUntilNextRest -= DeltaTime;
-	if (TimeUntilNextRest <= 0.f)
+	if (TargetActor && bIsAtBed)
 	{
-		const int32 ToRestore = FMath::Min(RestoreAmountPerTick, TotalRestToRestore - RestoredSoFar);
-		if (ToRestore > 0)
-		{
-			RestoredSoFar += ToRestore;
-			Agent->WorldState.SetValue("Energy", FMath::Clamp(Agent->WorldState.GetValue("Energy") + ToRestore, 0, 100));
-			if (TargetActor && !bGiveUpOnBed)
-			{
-				if (IRestable* Restable = Cast<IRestable>(TargetActor))
-					Restable->Rest(ToRestore);
-			}
-		}
-		TimeUntilNextRest = RestoreIntervalSeconds;
-	}
-
-	if (RestoredSoFar >= TotalRestToRestore)
-	{
-		if (TargetActor)
+		const int32 CurrentEnergy = Agent->WorldState.GetValue("Energy");
+		if (CurrentEnergy >= RestUntilEnergy)
 		{
 			if (IRestable* Restable = Cast<IRestable>(TargetActor))
 				Restable->Release(Agent);
+			Agent->WorldState.SetValue("IsResting", 0);
+			bHasSlept = true;
 		}
-		bHasSlept = true;
+		else
+		{
+			TimeUntilNextRest -= DeltaTime;
+			if (TimeUntilNextRest <= 0.f)
+			{
+				const int32 ToRestore = FMath::Min(RestoreAmountPerTick, RestUntilEnergy - CurrentEnergy);
+				if (ToRestore > 0)
+				{
+					Agent->WorldState.SetValue("Energy", FMath::Clamp(CurrentEnergy + ToRestore, 0, 100));
+					if (IRestable* Restable = Cast<IRestable>(TargetActor))
+						Restable->Rest(ToRestore);
+				}
+				TimeUntilNextRest = RestoreIntervalSeconds;
+			}
+		}
 	}
 		
 
@@ -97,7 +120,7 @@ bool UAction_Sleep::Execute(AAgent* Agent)
 }
 
 /**
- * True once TotalRestToRestore energy has been restored.
+ * True once energy has reached RestUntilEnergy.
  */
 bool UAction_Sleep::IsComplete() const
 {
@@ -110,7 +133,7 @@ bool UAction_Sleep::IsComplete() const
 bool UAction_Sleep::Setup(AAgent* Agent)
 {
 	if (!Agent || !Agent->GetWorld())
-		return true;
+		return false;
 
 	AActor* ClosestAvailableBed = nullptr;
 	float ClosestDistance = TNumericLimits<float>::Max();
@@ -160,17 +183,56 @@ void UAction_Sleep::ResetForPlan()
 {
 	UAction::ResetForPlan();
 
-	if (TargetActor) {
-		if (IRestable* Restable = Cast<IRestable>(TargetActor)) {
-			Restable->Release(nullptr);
-		}
-	}
-
-	TargetActor = nullptr;
 	bHasSlept = false;
-	RestoredSoFar = 0;
+	bIsAtBed = false;
 	TimeUntilNextRest = 0.f;
 	TimeTryingToReachBed = 0.f;
 	bGiveUpOnBed = false;
+}
+
+/**
+ * Releases the bed reservation when the action is aborted.
+ */
+void UAction_Sleep::Cleanup(AAgent* Agent)
+{
+	if (TargetActor)
+	{
+		if (IRestable* Restable = Cast<IRestable>(TargetActor))
+		{
+			Restable->Release(Agent);
+		}
+	}
+	
+	if (Agent)
+	{
+		Agent->WorldState.SetValue("IsResting", 0);
+	}
+	
+	UAction::Cleanup(Agent);
+	
+	bHasSlept = false;
+	bIsAtBed = false;
+	TimeUntilNextRest = 0.f;
+	TimeTryingToReachBed = 0.f;
+	bGiveUpOnBed = false;
+}
+
+/**
+ * Creates a copy of this action with the same configuration.
+ */
+UAction* UAction_Sleep::Clone(UObject* Outer) const
+{
+	UAction_Sleep* NewAction = NewObject<UAction_Sleep>(Outer, GetClass());
+	NewAction->AcceptanceRadius = AcceptanceRadius;
+	NewAction->ConsumeAmount = ConsumeAmount;
+	NewAction->Cost = Cost;
+	NewAction->Preconditions = Preconditions;
+	NewAction->Effects = Effects;
+	NewAction->RestoreAmountPerTick = RestoreAmountPerTick;
+	NewAction->RestoreIntervalSeconds = RestoreIntervalSeconds;
+	NewAction->SleepWhenUnder = SleepWhenUnder;
+	NewAction->RestUntilEnergy = RestUntilEnergy;
+	NewAction->GiveUpOnBedAfterSeconds = GiveUpOnBedAfterSeconds;
+	return NewAction;
 }
 

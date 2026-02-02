@@ -1,16 +1,21 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
 #pragma once
 
 #include "CoreMinimal.h"
 #include "AI/Actions/Action.h"
-#include "Action_FindFood.generated.h"
+#include "Action_GatherWood.generated.h"
 
+/**
+ * 
+ */
 UCLASS()
-class UEGOAP_API UAction_FindFood : public UAction
+class UEGOAP_API UAction_GatherWood : public UAction
 {
 	GENERATED_BODY()
 
 public:
-	UAction_FindFood();
+	UAction_GatherWood();
 
 	virtual bool CanExecute(const FWorldState& WorldState) const override;
 
@@ -26,8 +31,14 @@ public:
 	
 	virtual UAction* Clone(UObject* Outer) const override;
 
-	virtual bool SuppressesHungerDegradation() const override { return true; }
+	UPROPERTY(EditDefaultsOnly, Category = "GatherWood")
+	float GatherWoodDuration = 2.f;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "GatherWood")
+	int32 TargetWoodAmount = 5;
 
 private:
-	bool bHasFoundFood;
+	bool bHasFoundWood = false;
+	bool bHasArrived = false;
+	float TimeSpentGatheringWood = 0.f;
 };

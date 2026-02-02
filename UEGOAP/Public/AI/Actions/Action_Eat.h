@@ -21,9 +21,15 @@ public:
 	virtual bool Setup(AAgent* Agent) override;
 
 	virtual void ResetForPlan() override;
+	
+	virtual UAction* Clone(UObject* Outer) const override;
 
 	virtual bool SuppressesHungerDegradation() const override { return true; }
 
+	UPROPERTY(EditDefaultsOnly, Category = "Eat")
+	float EatDuration = 2.f;
+
 private:
-	bool bHasEaten;
+	bool bHasEaten = false;
+	float TimeSpentEating = 0.f;
 };

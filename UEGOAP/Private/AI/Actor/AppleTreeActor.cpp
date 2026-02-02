@@ -14,6 +14,9 @@ void AAppleTreeActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	if (FruitAmount == 0) {
+		SetLifeSpan(1.0f);
+	}
 }
 
 /**
@@ -22,9 +25,8 @@ void AAppleTreeActor::Tick(float DeltaTime)
 int32 AAppleTreeActor::Consume(int32 Amount)
 {
 	if (FruitAmount <= 0) return 0;
-	int32 Taken = FMath::Min(Amount, FruitAmount);
-	FruitAmount -= Taken;
-	return Taken;
+	FruitAmount -= Amount;
+	return Amount;
 }
 
 /**

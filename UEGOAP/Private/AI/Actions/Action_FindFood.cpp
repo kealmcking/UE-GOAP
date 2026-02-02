@@ -2,6 +2,7 @@
 #include "AI/Actor/Interfaces/Edible.h"
 #include "AI/Agent/Agent.h"
 #include "EngineUtils.h"
+#include "Navigation/PathFollowingComponent.h"
 
 /**
  * Requires Hunger >= 30 and HasFood == 0; effect sets HasFood to 1 on arrival at food.
@@ -11,21 +12,26 @@ UAction_FindFood::UAction_FindFood() : bHasFoundFood(false)
 	Cost = 1.0f;
 
 	AcceptanceRadius = 250.f;
+
 	Preconditions.Add("Hunger", 30);
 	Preconditions.Add("HasFood", 0);
+
 	Effects.Add("HasFood", 1);
 }
 
 /**
  * True when the agent is hungry enough and does not already have food.
+ * Base preconditions use Meets (>=) so HasFood==0 is enforced here explicitly.
  */
 bool UAction_FindFood::CanExecute(const FWorldState& WorldState) const
 {
+	if (WorldState.GetValue("HasFood") != 0)
+		return false;
 	return UAction::CanExecute(WorldState);
 }
 
 /**
- * Moves to the chosen food source; on arrival sets CurrentFoodSource and HasFood so Eat can consume.
+ * Moves to the chosen food source; completes when the path follower reaches the goal, then sets CurrentFoodSource and HasFood so Eat can consume.
  */
 bool UAction_FindFood::Execute(AAgent* Agent)
 {
@@ -33,11 +39,7 @@ bool UAction_FindFood::Execute(AAgent* Agent)
 		return false;
 
 	if (!AgentController)
-	{
 		AgentController = Cast<AAIController>(Agent->GetController());
-		if (!AgentController)
-			return false;
-	}
 
 	if (!bIsMoving)
 	{
@@ -46,14 +48,12 @@ bool UAction_FindFood::Execute(AAgent* Agent)
 		return true;
 	}
 
-	if (bUseManualMovement)
+	UPathFollowingComponent* PFC = AgentController ? AgentController->GetPathFollowingComponent() : nullptr;
+	const bool bPathIdle = PFC && PFC->GetStatus() == EPathFollowingStatus::Idle;
+	const bool bWithinRange = CheckArrival(Agent);
+	if (bPathIdle || bWithinRange)
 	{
-		float DeltaTime = Agent->GetWorld() ? Agent->GetWorld()->GetDeltaSeconds() : 0.016f;
-		TickManualMovement(Agent, DeltaTime);
-	}
-
-	if (CheckArrival(Agent))
-	{
+		bIsMoving = false;
 		if (IEdible* Edible = Cast<IEdible>(TargetActor))
 		{
 			if (Edible->GetAvailableAmount() < 1)
@@ -110,7 +110,6 @@ bool UAction_FindFood::Setup(AAgent* Agent)
 	if (!Agent) return false;
 
 	AgentController = Cast<AAIController>(Agent->GetController());
-	if (!AgentController) return false;
 
 	AActor* Closest = nullptr;
 	float MinDistance = TNumericLimits<float>::Max();
@@ -118,7 +117,8 @@ bool UAction_FindFood::Setup(AAgent* Agent)
 	UWorld* World = Agent->GetWorld();
 	if (!World) return false;
 
-	for (TActorIterator<AActor> It(Agent->GetWorld()); It; ++It) {
+	for (TActorIterator<AActor> It(Agent->GetWorld()); It; ++It)
+	{
 		if (!It->GetClass()->ImplementsInterface(UEdible::StaticClass()))
 			continue;
 		if (Agent->LastDepletedFoodSource && *It == Agent->LastDepletedFoodSource)
@@ -129,13 +129,15 @@ bool UAction_FindFood::Setup(AAgent* Agent)
 				continue;
 		}
 		float Dist = FVector::Dist(Agent->GetActorLocation(), It->GetActorLocation());
-		if (Dist < MinDistance) {
+		if (Dist < MinDistance)
+		{
 			MinDistance = Dist;
 			Closest = *It;
 		}
 	}
 
-	if (Closest) {
+	if (Closest)
+	{
 		TargetActor = Closest;
 		return true;
 	}
@@ -152,4 +154,15 @@ void UAction_FindFood::ResetForPlan()
 {
 	UAction::ResetForPlan();
 	bHasFoundFood = false;
+}
+
+UAction* UAction_FindFood::Clone(UObject* Outer) const
+{
+	UAction_FindFood* NewAction = NewObject<UAction_FindFood>(Outer, GetClass());
+	NewAction->AcceptanceRadius = AcceptanceRadius;
+	NewAction->ConsumeAmount = ConsumeAmount;
+	NewAction->Cost = Cost;
+	NewAction->Preconditions = Preconditions;
+	NewAction->Effects = Effects;
+	return NewAction;
 }

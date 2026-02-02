@@ -11,7 +11,7 @@ class UEGOAP_API UGoal_StayRested : public UGoal
 
 public:
 	UGoal_StayRested() {
-		Priority = 10;
+		Priority = 15;
 	}
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Goal")

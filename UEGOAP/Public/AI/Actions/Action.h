@@ -19,7 +19,7 @@ class UEGOAP_API UAction : public UObject
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Action|Movement")
-	float AcceptanceRadius = 100.f;
+	float AcceptanceRadius = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Action|Movement")
 	int32 ConsumeAmount = 1;
@@ -42,20 +42,22 @@ public:
 	TMap<FName, int32> Preconditions;
 	TMap<FName, int32> Effects;
 
-	/** Override to pick targets and prepare the action before execution. */
 	virtual bool Setup(AAgent* Agent);
-	/** True when the world state meets all preconditions. */
 	virtual bool CanExecute(const FWorldState& WorldState) const;
-	/** Runs the action for one tick; return true to keep running. */
 	virtual bool Execute(class AAgent* Agent);
-	/** True when the action has finished. */
 	virtual bool IsComplete() const;
 
 	virtual bool StartMoveTo(AAgent* Agent, AActor* Target);
 	virtual bool CheckArrival(AAgent* Agent);
 
-	/** Clears movement and target state so the action can run again in a new plan. */
 	virtual void ResetForPlan();
+	
+	/** Called when action is interrupted/aborted to release any held resources (beds, reservations, etc.) */
+	virtual void Cleanup(AAgent* Agent);
+	
+	/** Creates a copy of this action for use in a plan (actions are cloned to avoid shared state issues) */
+	virtual UAction* Clone(UObject* Outer) const;
+	
 	virtual bool SuppressesEnergyDegradation() const { return false; }
 	virtual bool SuppressesHungerDegradation() const { return false; }
 	void TickManualMovement(class AAgent* Agent, float DeltaTime);

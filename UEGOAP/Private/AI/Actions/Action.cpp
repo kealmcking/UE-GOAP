@@ -60,19 +60,51 @@ void UAction::ResetForPlan()
 }
 
 /**
- * Requests pathfinding to the target; falls back to manual movement if MoveTo fails.
+ * Called when action is interrupted/aborted to release any held resources.
+ * Override in subclasses to release beds, food sources, etc.
+ */
+void UAction::Cleanup(AAgent* Agent)
+{
+	if (AgentController)
+	{
+		AgentController->StopMovement();
+	}
+	bIsMoving = false;
+	bUseManualMovement = false;
+	TargetActor = nullptr;
+	AgentController = nullptr;
+}
+
+/**
+ * Creates a copy of this action for use in a plan.
+ * Override in subclasses to copy additional state.
+ */
+UAction* UAction::Clone(UObject* Outer) const
+{
+	UAction* NewAction = NewObject<UAction>(Outer, GetClass());
+	NewAction->AcceptanceRadius = AcceptanceRadius;
+	NewAction->ConsumeAmount = ConsumeAmount;
+	NewAction->Cost = Cost;
+	NewAction->Preconditions = Preconditions;
+	NewAction->Effects = Effects;
+	return NewAction;
+}
+
+/**
+ * Requests pathfinding to the target via AIController; requires a valid controller.
  */
 bool UAction::StartMoveTo(AAgent* Agent, AActor* Target)
 {
     if (!Agent || !Target)
         return false;
 
+    TargetActor = Target;
+
     if (!AgentController)
         AgentController = Cast<AAIController>(Agent->GetController());
+
     if (!AgentController)
         return false;
-
-    TargetActor = Target;
 
     UWorld* World = Agent->GetWorld();
     UNavigationSystemV1* NavSys = World ? FNavigationSystem::GetCurrent<UNavigationSystemV1>(World) : nullptr;
@@ -98,13 +130,6 @@ bool UAction::StartMoveTo(AAgent* Agent, AActor* Target)
 
     bIsMoving = (Result == EPathFollowingRequestResult::RequestSuccessful);
     bUseManualMovement = false;
-
-    if (!bIsMoving)
-    {
-        bIsMoving = true;
-        bUseManualMovement = true;
-    }
-
     return true;
 }
 

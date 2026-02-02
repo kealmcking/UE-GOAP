@@ -20,7 +20,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	int32 FruitAmount = 25;
+	int32 FruitAmount = 10;
 
 	virtual int32 Consume(int32 Amount) override;
 	virtual int32 GetAvailableAmount() const override;

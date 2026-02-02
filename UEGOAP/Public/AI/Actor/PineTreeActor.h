@@ -19,4 +19,10 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 WoodAmount = 25;
+
+	virtual int32 Gather(int32 Amount) override;
+	virtual int32 GetAvailableAmount() const override;
+
 };

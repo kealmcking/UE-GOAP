@@ -46,16 +46,32 @@ public:
 	UPROPERTY()
 	AActor* CurrentFoodSource = nullptr;
 
-	/** Requests a new plan when none is active; resets and sets up actions then hands the sequence to the executor. */
+	UPROPERTY()
+	AActor* LastDepletedWoodSource = nullptr;
+
+	UPROPERTY()
+	AActor* CurrentWoodSource = nullptr;
+
+	UPROPERTY()
+	UGoal* CurrentGoal = nullptr;
+
 	void RequestPlan();
 
-	/** Returns the highest-priority goal that is not yet satisfied by the current world state. */
 	UGoal* SelectTopGoal() const;
 
-private:
-	FTimerHandle PlanTimerHandle;
+	void ClearRegeneratedSources();
 
-	float DegradationAccumulator = 0.f;
+private:
+	float HungerAcummulationAccumulator = 0.f;
+	float EnergyDegradationAccumulator = 0.f;
+	float SourceCleanupAccumulator = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Degradation")
+	float EnergyDegradationIntervalSeconds = 5.f;
+
+
+	UPROPERTY(EditDefaultsOnly, Category = "Degradation")
+	float HungerAccumulationIntervalSeconds = 5.f;
 
 public:
 	UPROPERTY(EditDefaultsOnly)

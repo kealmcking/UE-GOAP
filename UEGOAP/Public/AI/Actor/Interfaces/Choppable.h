@@ -15,4 +15,8 @@ class UEGOAP_API IChoppable
 	GENERATED_BODY()
 
 public:
+
+	virtual int32 Gather(int32 Amount) = 0;
+
+	virtual int32 GetAvailableAmount() const { return 0; }
 };
